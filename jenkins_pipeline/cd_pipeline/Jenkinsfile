@@ -1,0 +1,17 @@
+//CD_pipeline Configuration Script
+pipeline {
+    agent any
+
+    stages {
+        stage('Docker Deploy To Container') {
+            steps {
+                script {
+                    // This step should not normally be used in your script. Consult the inline help for details.
+                    withDockerRegistry(credentialsId: '1a55c9da-12ec-4467-b9ff-425874604cff', toolName: 'docker') {
+                        sh "docker run -d --name ekart -p 8070:8070 firestorm001/ekart:latest"
+                    }
+                }
+            }
+        }
+    }
+}

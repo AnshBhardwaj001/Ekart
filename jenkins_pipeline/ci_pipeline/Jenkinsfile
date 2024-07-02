@@ -1,0 +1,82 @@
+// CI_pipeline Configuration Script
+pipeline {
+    agent any
+    
+    tools {
+        jdk 'jdk11'
+        maven 'maven3'
+    }
+    
+    environment {
+        SCANNER_HOME= tool 'sonar-scanner'
+    }
+
+    stages {
+        stage('Git Checkout') {
+            steps {
+                git branch: 'main', changelog: false, poll: false, url: 'https://github.com/jaiswaladi246/Ekart.git'
+            }
+        }
+        
+        stage('Compile') {
+            steps {
+                sh "mvn clean compile"
+            }
+        }
+        
+        stage('Sonarqube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh '''#!/bin/bash
+                        ${SCANNER_HOME}/bin/sonar-scanner \
+                        -Dsonar.projectKey=ekart \
+                        -Dsonar.sources=. \
+                        -Dsonar.host.url=http://localhost:9000/ \
+                        -Dsonar.login=squ_4d1290968b4a9cabe82abc30116bf4cf413e8fbf
+                    '''
+                }
+            }
+            // steps {
+            //     sh''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.url=http://localhost:9000/ -Dsonar.login=squ_4d1290968b4a9cabe82abc30116bf4cf413e8fbf -Dsonar.projectName=ekart \
+            //     -Dsonar.java.binaries=. \
+            //     -Dsonar.projectKey=ekart'''
+            // }
+        }
+        
+        stage('OWASP SCAN') {
+            steps {
+                dependencyCheck additionalArguments: ' --scan ./', odcInstallation: 'DP'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
+        
+        stage('Build Application') {
+            steps {
+                sh "mvn clean install -DskipTests=true"
+            }
+        }
+        
+        stage('Build & Push Docker Image') {
+            steps {
+                script {
+                    withDockerServer(serverUrl: 'tcp://docker-host:2375', credentialsId: '1a55c9da-12ec-4467-b9ff-425874604cff') {
+                        sh 'echo "Logged in successfully"'
+                        sh "docker build -t ekart:latest -f docker/Dockerfile ."
+                        sh "docker tag ekart:latest firestorm001/ekart:latest"
+                        docker.withRegistry('https://index.docker.io/v1/', '1a55c9da-12ec-4467-b9ff-425874604cff') {
+                            docker.image('firestorm001/ekart:latest').push()
+                        }
+                    
+                    }
+                
+                }
+            }
+        }
+        
+        stage('Trigger CD Pipeline') {
+            steps {
+                build job: "CD_pipeline" , wait: true
+            }
+        }
+    }
+}
